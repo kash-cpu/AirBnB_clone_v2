@@ -1,59 +1,68 @@
 #!/usr/bin/python3
-"""distributes an archive to your web servers"""
+'''
+fabric script to distribute an archive to web servers
+----NEEDS TO REVISIT SCRIPT
+'''
 
-from os.path import exists
-from fabric.api import put, run, env
+import os
+from datetime import datetime
+from fabric.api import env, local, put, run, runs_once
+
+
 env.hosts = ['52.91.149.165', '100.26.237.89']
-env.user = "ubuntu"
 
 
 def do_deploy(archive_path):
-    """function do_deploy"""
-
-    path = '/data/web_static/releases/'
-    """spliting the archived path at /.
-    removing versions dir example:
-    versions/web_static_20170315003959.tgz
+    """Distributes an archive to a web server.
+    Args:
+        archive_path (str): The path of the archive to distribute.
+    Returns:
+        If the file doesn't exist at archive_path or an error occurs - False.
+        Otherwise - True.
     """
-    file_name = archive_path.split('/')[1]
-
-    " remove .tgz "
-    no_extention = file_name.split('.')[0]
-
-    "Set destination path for unziping"
-    where_to_unzip = ('{}' + '{}/').format(path, no_extention)
-
-    "Set destination path for storing zipped file"
-    tmp_path = ('/tmp/{}').format(file_name)
-
-    if not exists(archive_path):
-        return False
+    if not os.path.isdir("versions"):
+        os.mkdir("versions")
+    cur_time = datetime.now()
+    output = "versions/web_static_{}{}{}{}{}{}.tgz".format(
+        cur_time.year,
+        cur_time.month,
+        cur_time.day,
+        cur_time.hour,
+        cur_time.minute,
+        cur_time.second
+    )
     try:
-        "Store zipped file in /tmp/"
-        put(archive_path, '/tmp/')
+        print("Packing web_static to {}".format(output))
+        local("tar -cvzf {} web_static".format(output))
+        archize_size = os.stat(output).st_size
+        print("web_static packed: {} -> {} Bytes".format(output, archize_size))
+    except Exception:
+        output = None
+    return output
 
-        "Create the destination directory"
-        run('sudo mkdir -p {}'.format(where_to_unzip))
 
-        "Unzipped the zipped file to the directory created"
-        run('sudo tar -xzf {} -C {}'.format(tmp_path, where_to_unzip))
-
-        "Remove the zipped file in /tmp/"
-        run('sudo rm {}'.format(tmp_path))
-
-        "Transfer the file from <>/web_static/ to <> i.e rm /web_static/."
-        run('sudo mv {}web_static/* {}'.format(where_to_unzip, where_to_unzip))
-
-        "Finally removing web_static after file transfer"
-        run('sudo rm -rf {}web_static'.format(where_to_unzip))
-
-        "Remove the previous symbolic link"
-        run('sudo rm -rf /data/web_static/current')
-
-        "Create another symbolic link"
-        run('sudo ln -s {} /data/web_static/current'.format(where_to_unzip))
-
+def do_deploy(archive_path):
+    """Deploys the static files to the host servers.
+    Args:
+        archive_path (str): The path to the archived static files.
+    """
+    if not os.path.exists(archive_path):
+        return False
+    file_name = os.path.basename(archive_path)
+    folder_name = file_name.replace(".tgz", "")
+    folder_path = "/data/web_static/releases/{}/".format(folder_name)
+    success = False
+    try:
+        put(archive_path, "/tmp/{}".format(file_name))
+        run("mkdir -p {}".format(folder_path))
+        run("tar -xzf /tmp/{} -C {}".format(file_name, folder_path))
+        run("rm -rf /tmp/{}".format(file_name))
+        run("mv {}web_static/* {}".format(folder_path, folder_path))
+        run("rm -rf {}web_static".format(folder_path))
+        run("rm -rf /data/web_static/current")
+        run("ln -s {} /data/web_static/current".format(folder_path))
         print('New version deployed!')
-        return True
-    except Exception as e:
-        print(e)
+        success = True
+    except Exception:
+        success = False
+    return success
